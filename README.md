@@ -30,3 +30,19 @@ aws --region us-west-2 cloudformation create-stack \
   --capabilities CAPABILITY_IAM \
   --stack-name DemoApp
 ```
+
+## Describe Stack Resources
+```
+$ aws --region us-west-2 cloudformation describe-stack-resources \
+  --stack-name DemoApp | jq -r .StackResources[]
+```
+
+## Get Stack Resources Without Tags
+```
+$ aws --region us-west-2 cloudformation describe-stack-resources --stack-name DemoApp | 
+  jq -r '.StackResources[] | 
+  select(.ResourceType == "AWS::AutoScaling::LaunchConfiguration"
+  or .ResourceType == "AWS::DynamoDB::Table"
+  or .ResourceType == "AWS::IAM::InstanceProfile"
+  or .ResourceType == "AWS::IAM::Role")'
+```

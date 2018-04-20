@@ -1,0 +1,5 @@
+- include: aws-autoscaling-launch-configurations:LaunchConfigurationName ~= DemoApp-lce6aa3504dc2846b5b391e6ab0903e151a4f425805c85521aa281c46e70ddb472-1B9CZ72CWK6WZ
+- include: aws-dynamodb-tables:TableName ~= demo-app-table
+- include: aws-iam-instance-profiles:InstanceProfileName ~= DemoApp-DemoAppInstanceProfile-106BQNY92TQT9
+- include: aws-iam-roles:RoleName ~= DemoApp-DemoAppRole-14DOO4GO7STKI
+- include: "*:Tags[].Key == Migrate"
