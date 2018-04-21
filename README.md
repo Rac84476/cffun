@@ -46,3 +46,16 @@ $ aws --region us-west-2 cloudformation describe-stack-resources --stack-name De
   or .ResourceType == "AWS::IAM::InstanceProfile"
   or .ResourceType == "AWS::IAM::Role")'
 ```
+
+## Update Stack with DeletionPolicy Attribute Retain
+```
+aws --region us-west-2 cloudformation update-stack 
+  --capabilities CAPABILITY_IAM 
+  --template-body file://DemoAppRetain.cf 
+  --stack-name DemoApp
+```
+
+## Transcribe the Stack
+```
+$ fugue-transcriber --region us-west-2 --filter-file filter.yaml DemoApp.lw
+```
