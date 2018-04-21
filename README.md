@@ -59,3 +59,8 @@ aws --region us-west-2 cloudformation update-stack
 ```
 $ fugue-transcriber --region us-west-2 --filter-file filter.yaml DemoApp.lw
 ```
+
+## Import the Stack
+```
+$ fugue run DemoApp.lw -a DemoApp --import
+```
