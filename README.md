@@ -51,7 +51,7 @@ $ aws --region us-west-2 cloudformation describe-stack-resources --stack-name De
 ```
 aws --region us-west-2 cloudformation update-stack 
   --capabilities CAPABILITY_IAM 
-  --template-body file://DemoAppRetain.cf 
+  --template-body file://DemoAppRetain.yaml
   --stack-name DemoApp
 ```
 
