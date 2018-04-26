@@ -26,7 +26,7 @@ $ aws --region us-west-2 cloudformation delete-stack \
 
 ```
 aws --region us-west-2 cloudformation create-stack \
-  --template-body file://DemoApp.cf \
+  --template-body file://DemoApp.yaml \
   --capabilities CAPABILITY_IAM \
   --stack-name DemoApp
 ```
