@@ -1,0 +1,351 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  Fugue Demo App
+Resources:
+  DemoAppVpc:
+    Type: 'AWS::EC2::VPC'
+    DeletionPolicy: Retain
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      InstanceTenancy: default
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'false'
+      Tags:
+        - Key: Name
+          Value: demo-app-network
+        - Key: Migrate 
+          Value: True
+  DemoAppSubnetA:
+    Type: 'AWS::EC2::Subnet'
+    DeletionPolicy: Retain
+    Properties:
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: us-west-2a
+      VpcId: !Ref DemoAppVpc
+      Tags:
+        - Key: Name
+          Value: demo-app-network-PUBLIC-SN-A
+        - Key: network
+          Value: public
+        - Key: Migrate
+          Value: True
+  DemoAppSubnetB:
+    Type: 'AWS::EC2::Subnet'
+    DeletionPolicy: Retain
+    Properties:
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: us-west-2b
+      VpcId: !Ref DemoAppVpc
+      Tags:
+        - Key: network
+          Value: public
+        - Key: Name
+          Value: demo-app-network-PUBLIC-SN-B
+        - Key: Migrate 
+          Value: True
+  DemoAppIgw:
+    Type: 'AWS::EC2::InternetGateway'
+    DeletionPolicy: Retain
+    Properties:
+      Tags:
+        - Key: Name
+          Value: demo-app-network-IGW
+        - Key: network
+          Value: public
+        - Key: Migrate 
+          Value: True
+  DemoAppDHCPOptions:
+    Type: 'AWS::EC2::DHCPOptions'
+    DeletionPolicy: Retain
+    Properties:
+      Tags:
+        - Key: Name
+          Value: demo-app-network
+        - Key: Migrate 
+          Value: True
+      DomainName: us-west-2.compute.internal
+      DomainNameServers:
+        - AmazonProvidedDNS
+  DemoAppNetworkAcl:
+    Type: 'AWS::EC2::NetworkAcl'
+    DeletionPolicy: Retain
+    Properties:
+      VpcId: !Ref DemoAppVpc
+      Tags:
+        - Key: Name
+          Value: demo-app-network-ACL
+        - Key: network
+          Value: public
+        - Key: Migrate
+          Value: True
+  DemoAppPublicRT:
+    Type: 'AWS::EC2::RouteTable'
+    DeletionPolicy: Retain
+    Properties:
+      VpcId: !Ref DemoAppVpc
+      Tags:
+        - Key: Name
+          Value: demo-app-network-PUBLIC-RT
+        - Key: network
+          Value: public
+        - Key: Migrate 
+          Value: True
+  DemoAppLocalRT:
+    Type: 'AWS::EC2::RouteTable'
+    DeletionPolicy: Retain
+    Properties:
+      VpcId: !Ref DemoAppVpc
+      Tags:
+        - Key: Name
+          Value: demo-app-network-LOCAL-RT
+        - Key: network
+          Value: public
+        - Key: Migrate
+          Value: True
+  DemoAppLoadBalancer:
+    Type: 'AWS::ElasticLoadBalancing::LoadBalancer'
+    DeletionPolicy: Retain
+    Properties:
+      Subnets:
+        - !Ref DemoAppSubnetB
+        - !Ref DemoAppSubnetA
+      HealthCheck:
+        HealthyThreshold: '3'
+        Interval: '15'
+        Target: 'TCP:3000'
+        Timeout: '3'
+        UnhealthyThreshold: '3'
+      ConnectionDrainingPolicy:
+        Enabled: 'false'
+        Timeout: '300'
+      ConnectionSettings:
+        IdleTimeout: '60'
+      SecurityGroups:
+        - !Ref DemoAppWebSg
+      Listeners:
+        - InstancePort: '3000'
+          LoadBalancerPort: '80'
+          Protocol: HTTP
+          InstanceProtocol: HTTP
+      Tags:
+        - Key: Application
+          Value: Fugue Demo App
+        - Key: Name
+          Value: demo-app-elb
+        - Key: Migrate 
+          Value: True
+  DemoAppRole:
+    Type: 'AWS::IAM::Role'
+    DeletionPolicy: Retain
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+  DemoAppInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    DeletionPolicy: Retain
+    Properties:
+      Path: /
+      Roles:
+        - !Ref DemoAppRole
+  DemoAppASG:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    DeletionPolicy: Retain
+    Properties:
+      AvailabilityZones:
+        - us-west-2a
+        - us-west-2b
+      Cooldown: '300'
+      DesiredCapacity: '4'
+      HealthCheckGracePeriod: '0'
+      HealthCheckType: EC2
+      MaxSize: '4'
+      MinSize: '4'
+      VPCZoneIdentifier:
+        - !Ref DemoAppSubnetB
+        - !Ref DemoAppSubnetA
+      LaunchConfigurationName: !Ref DemoAppLaunchConfig
+      LoadBalancerNames:
+        - !Ref DemoAppLoadBalancer
+      Tags:
+        - Key: Application
+          Value: Fugue Demo App
+          PropagateAtLaunch: true
+        - Key: Name
+          Value: demo-app-asg
+          PropagateAtLaunch: true
+        - Key: Migrate 
+          Value: True
+          PropagateAtLaunch: true
+      MetricsCollection:
+        - Granularity: 1Minute
+          Metrics:
+            - GroupInServiceInstances
+            - GroupTotalInstances
+      TerminationPolicies:
+        - ClosestToNextInstanceHour
+  DemoAppLaunchConfig:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    DeletionPolicy: Retain
+    Properties:
+      AssociatePublicIpAddress: true
+      ImageId: ami-b7b366d7
+      InstanceType: t2.micro
+      IamInstanceProfile:
+        !Ref DemoAppInstanceProfile
+      InstanceMonitoring: 'true'
+      SecurityGroups:
+        - !Ref DemoAppElbSg
+  DemoAppDdbTable:
+    Type: 'AWS::DynamoDB::Table'
+    DeletionPolicy: Retain
+    Properties:
+      TableName: "demo-app-table"
+      AttributeDefinitions:
+        - AttributeName: PropertyName
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PropertyName
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: '10'
+        WriteCapacityUnits: '10'
+  DemoAppElbSg:
+    Type: 'AWS::EC2::SecurityGroup'
+    DeletionPolicy: Retain
+    Properties:
+      GroupDescription: Allow http traffic from the ELB SG
+      VpcId: !Ref DemoAppVpc
+      Tags:
+        - Key: Application
+          Value: Fugue Demo App
+        - Key: Name
+          Value: demo-app-web-sg
+        - Key: Migrate 
+          Value: True
+  DemoAppWebSg:
+    Type: 'AWS::EC2::SecurityGroup'
+    DeletionPolicy: Retain
+    Properties:
+      GroupDescription: Allow http/s traffic from the Internet
+      VpcId: !Ref DemoAppVpc
+      Tags:
+        - Key: Application
+          Value: Fugue Demo App
+        - Key: Name
+          Value: demo-app-elb-sg
+        - Key: Migrate 
+          Value: True
+  DemoAppNetworkAclEgress:
+    Type: 'AWS::EC2::NetworkAclEntry'
+    DeletionPolicy: Retain
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Egress: 'true'
+      Protocol: '-1'
+      RuleAction: allow
+      RuleNumber: '100'
+      NetworkAclId: !Ref DemoAppNetworkAcl
+  DemoAppNetworkAclIngress:
+    Type: 'AWS::EC2::NetworkAclEntry'
+    DeletionPolicy: Retain
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Protocol: '-1'
+      RuleAction: allow
+      RuleNumber: '100'
+      NetworkAclId: !Ref DemoAppNetworkAcl
+  DemoAppSubnetNetworkAclAssociation:
+    Type: 'AWS::EC2::SubnetNetworkAclAssociation'
+    DeletionPolicy: Retain
+    Properties:
+      NetworkAclId: !Ref DemoAppNetworkAcl
+      SubnetId: !Ref DemoAppSubnetB
+  DemoAppNetworkSubnetNetworkAclAssociation:
+    Type: 'AWS::EC2::SubnetNetworkAclAssociation'
+    DeletionPolicy: Retain
+    Properties:
+      NetworkAclId: !Ref DemoAppNetworkAcl
+      SubnetId: !Ref DemoAppSubnetA
+  DemoAppVpcGatewayAttachement:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    DeletionPolicy: Retain
+    Properties:
+      VpcId: !Ref DemoAppVpc
+      InternetGatewayId: !Ref DemoAppIgw
+  DemoAppSubnetRouteTableAssociationA:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    DeletionPolicy: Retain
+    Properties:
+      RouteTableId: !Ref DemoAppPublicRT
+      SubnetId: !Ref DemoAppSubnetA
+  DemoAppSubnetRouteTableAssociationB:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    DeletionPolicy: Retain
+    Properties:
+      RouteTableId: !Ref DemoAppPublicRT
+      SubnetId: !Ref DemoAppSubnetB
+  DemoAppIgwRoute:
+    Type: 'AWS::EC2::Route'
+    DeletionPolicy: Retain
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      RouteTableId: !Ref DemoAppPublicRT
+      GatewayId: !Ref DemoAppIgw
+    DependsOn: DemoAppVpcGatewayAttachement
+  DemoAppDHCPOptionsAssociation:
+    Type: 'AWS::EC2::VPCDHCPOptionsAssociation'
+    DeletionPolicy: Retain
+    Properties:
+      VpcId: !Ref DemoAppVpc
+      DhcpOptionsId: !Ref DemoAppDHCPOptions
+  DemoAppWebSgIngress3000:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DeletionPolicy: Retain
+    Properties:
+      GroupId: !Ref DemoAppElbSg
+      IpProtocol: tcp
+      FromPort: '3000'
+      ToPort: '3000'
+      SourceSecurityGroupId: !Ref DemoAppWebSg
+      SourceSecurityGroupOwnerId: '225195660222'
+  DemoAppWebSgIngress80:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DeletionPolicy: Retain
+    Properties:
+      GroupId: !Ref DemoAppWebSg
+      IpProtocol: tcp
+      FromPort: '80'
+      ToPort: '80'
+      CidrIp: 0.0.0.0/0
+  DemoAppWebSgIngress443:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DeletionPolicy: Retain
+    Properties:
+      GroupId: !Ref DemoAppWebSg
+      IpProtocol: tcp
+      FromPort: '443'
+      ToPort: '443'
+      CidrIp: 0.0.0.0/0
+  DemoAppElbSgEgress:
+    Type: 'AWS::EC2::SecurityGroupEgress'
+    DeletionPolicy: Retain
+    Properties:
+      GroupId: !Ref DemoAppElbSg
+      IpProtocol: '-1'
+      CidrIp: 0.0.0.0/0
+  DemoAppWebSgEgress:
+    Type: 'AWS::EC2::SecurityGroupEgress'
+    DeletionPolicy: Retain
+    Properties:
+      GroupId: !Ref DemoAppWebSg
+      IpProtocol: '-1'
+      CidrIp: 0.0.0.0/0
