@@ -49,9 +49,9 @@ $ aws --region us-west-2 cloudformation describe-stack-resources --stack-name De
 
 ## Update Stack with DeletionPolicy Attribute Retain
 ```
-aws --region us-west-2 cloudformation update-stack 
-  --capabilities CAPABILITY_IAM 
-  --template-body file://DemoAppRetain.yaml
+aws --region us-west-2 cloudformation update-stack \
+  --capabilities CAPABILITY_IAM \
+  --template-body file://DemoAppRetain.yaml \
   --stack-name DemoApp
 ```
 
