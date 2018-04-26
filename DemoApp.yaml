@@ -65,6 +65,7 @@ Resources:
     Type: 'AWS::EC2::NetworkAcl'
     Properties:
       VpcId: !Ref DemoAppVpc
+      Tags:
         - Key: Name
           Value: demo-app-network-ACL
         - Key: network
