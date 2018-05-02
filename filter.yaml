@@ -3,4 +3,3 @@
 - include: aws-iam-instance-profiles:InstanceProfileName ~=
 - include: aws-iam-roles:RoleName ~=
 - include: "*:Tags[].Key == Migrate"
-- exclude: aws-ec2-instances:*
