@@ -1,8 +1,14 @@
 ## Notes
 
+### Add DeletionPolicy to every resource
+
+```
+cat DemoApp.json | jq '.Resources | map_values(. + {DeletionPolicy: "Retain"})'
+```
+
 ### Filtering by Tag
 
-(FUGUE-6607) Tags starting with `aws:` are reserved by AWS. We prepend "fugue-transcriber" to tags that start with "aws:".  
+(FUGUE-6607) Tags starting with `aws:` are reserved by AWS. We prepend "fugue-transcriber" to tags that start with "aws:".
 
 We do this because you can't create tags with those names.
 
@@ -39,8 +45,8 @@ $ aws --region us-west-2 cloudformation describe-stack-resources \
 
 ## Get Stack Resources Without Tags
 ```
-$ aws --region us-west-2 cloudformation describe-stack-resources --stack-name DemoApp | 
-  jq -r '.StackResources[] | 
+$ aws --region us-west-2 cloudformation describe-stack-resources --stack-name DemoApp |
+  jq -r '.StackResources[] |
   select(.ResourceType == "AWS::AutoScaling::LaunchConfiguration"
   or .ResourceType == "AWS::DynamoDB::Table"
   or .ResourceType == "AWS::IAM::InstanceProfile"
