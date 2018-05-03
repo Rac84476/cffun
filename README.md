@@ -3,12 +3,13 @@
 ### Add DeletionPolicy to every resource
 
 ```
-cat DemoApp.json | jq '.Resources | map_values(. + {DeletionPolicy: "Retain"})'
+cat DemoApp.json | jq '.Resources | map_values(. + {DeletionPolicy: "Retain"})' > DemoAppRetain.json
 ```
 
 ### Filtering by Tag
 
-(FUGUE-6607) Tags starting with `aws:` are reserved by AWS. We prepend "fugue-transcriber" to tags that start with "aws:".
+(FUGUE-6607) Tags starting with `aws:` are reserved by AWS. We prepend "fugue-transcriber" to tags that start
+with "aws:".
 
 We do this because you can't create tags with those names.
 
