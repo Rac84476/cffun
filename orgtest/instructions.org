@@ -1,0 +1,820 @@
+#+TITLE: Capture a CloudFormation Stack with Fugue
+
+#+PROPERTY: header-args  :dir ~/Luminal/cffun
+#+PROPERTY: header-args+ :var profile="chrisc"
+#+PROPERTY: header-args+ :var conductorRegion="us-east-1"
+#+PROPERTY: header-args+ :var infraRegion="us-west-2"
+#+PROPERTY: header-args+ :results output
+
+* Environment
+
+#+BEGIN_SRC sh
+  aws --version
+#+END_SRC
+
+#+RESULTS:
+: aws-cli/1.11.146 Python/3.6.3 Darwin/17.5.0 botocore/1.7.4
+
+#+BEGIN_SRC sh
+  qatool --version
+#+END_SRC
+
+#+RESULTS:
+: qatool, version 1.8.5
+
+#+BEGIN_SRC sh
+  echo "Relevant environment variables:"
+  (printenv | grep ARTIFACT) || echo "No ARTIFACT env vars"
+  (printenv | grep AWS) || echo "No AWS env vars"
+  (printenv | grep FUGUE) || echo "No FUGUE env vars"
+#+END_SRC
+
+#+RESULTS:
+: Relevant environment variables:
+: No ARTIFACT env vars
+: No AWS env vars
+: No FUGUE env vars
+
+* Install Fugue
+
+#+BEGIN_SRC sh
+  qatool --profile $profile install -r $conductorRegion -m latest
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+AWS Account is 683892460708 (aws)
+
+Resolving AMI id for milestone=latest region=us-east-1...
+Found Conductor AMI: ami-aa8833d5
+
+Searching for fugue-client latest...
+Found fugue-client-0.56.1-4057.pkg
+
+Downloading artifact fugue-client-0.56.1-4057.pkg...
+Saved to /Users/chrisc/.qatool/repository/fugue-client-0.56.1-4057.pkg
+
+Installing /Users/chrisc/.qatool/repository/fugue-client-0.56.1-4057.pkg...
+Done
+
+Fugue CLI version is...
+Fugue Client Version: 0.54.10
+Fugue CLI Version: 1.31.7-5587-9a207af1fb395e166d1a0862fc8f71974ae8fab7
+VARs Version: 6.14.0-3791-19cb34e4089c7402024d221e3b227615c0d6735a
+LWDoc Version: 0.48.2
+LWC Version: 0.48.2
+Transcriber Version: 1.6.4-1231-7f95a9635d9338b71328d74faa0c982bad3c748f
+Composer Version: 0.7.2-1612
+
+Running fugue init...
+[ fugue init ] Initializing Fugue project with the following configuration:
+
+Fugue Conductor AMI ID: ami-aa8833d5.
+AWS Credentials: Profile (chrisc)
+Region: us-east-1
+
+Validating Fugue Conductor AMI ID ...
+[ OK ] Provided AMI ID is valid.
+
+Creating new fugue.yaml file ...
+
+[ Done ] Project initialized.
+
+Setting zFugueDebugKey in fugue.yaml...
+aws:
+  credentialProfile: chrisc
+conductor:
+  ami: ami-aa8833d5
+  keyName: zFugueDebugKey
+  region: us-east-1
+
+
+Running fugue install...
+Done
+#+end_example
+
+#+BEGIN_SRC sh
+  cat fugue.yaml
+#+END_SRC
+
+#+RESULTS:
+: aws:
+:   credentialProfile: chrisc
+: conductor:
+:   ami: ami-aa8833d5
+:   keyName: zFugueDebugKey
+:   region: us-east-1
+
+#+BEGIN_SRC sh
+  fugue status
+#+END_SRC
+
+#+RESULTS:
+:
+: Fugue Status Report for chrisc/683892460708 - Fri May 4 2018 6:24pm
+:
+: State    Updated    Created    Account    FID/Alias    Flags    Last Message    Next Command
+: -------  ---------  ---------  ---------  -----------  -------  --------------  --------------
+: Nothing to see here. Go create something! :-)
+:
+
+* Create CloudFormation Stack
+
+#+BEGIN_SRC sh
+  aws --profile $profile --region $infraRegion cloudformation create-stack \
+    --template-body file://DemoApp.json \
+    --capabilities CAPABILITY_IAM \
+    --stack-name DemoApp
+#+END_SRC
+
+#+RESULTS:
+: {
+:     "StackId": "arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2"
+: }
+
+* Make Transcriber filter file
+
+An initial filter file is already provided as =filter.yaml=. A few resource ids must be filled in.
+
+** List relevant CF resources
+
+#+BEGIN_SRC sh
+  f='.StackResources[] | select(.ResourceType == "AWS::AutoScaling::LaunchConfiguration" or
+                                .ResourceType == "AWS::IAM::InstanceProfile" or
+                                .ResourceType == "AWS::IAM::Role")'
+
+  aws --profile $profile --region $infraRegion cloudformation describe-stack-resources \
+  --stack-name DemoApp | jq -r "$f"
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+{
+  "StackName": "DemoApp",
+  "StackId": "arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2",
+  "LogicalResourceId": "DemoAppInstanceProfile",
+  "PhysicalResourceId": "DemoApp-DemoAppInstanceProfile-VFOQ0KDXSZTV",
+  "ResourceType": "AWS::IAM::InstanceProfile",
+  "Timestamp": "2018-05-04T22:27:36.456Z",
+  "ResourceStatus": "CREATE_COMPLETE"
+}
+{
+  "StackName": "DemoApp",
+  "StackId": "arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2",
+  "LogicalResourceId": "DemoAppLaunchConfig",
+  "PhysicalResourceId": "DemoApp-DemoAppLaunchConfig-GC4WRNFG83E7",
+  "ResourceType": "AWS::AutoScaling::LaunchConfiguration",
+  "Timestamp": "2018-05-04T22:27:39.222Z",
+  "ResourceStatus": "CREATE_COMPLETE"
+}
+{
+  "StackName": "DemoApp",
+  "StackId": "arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2",
+  "LogicalResourceId": "DemoAppRole",
+  "PhysicalResourceId": "DemoApp-DemoAppRole-DTKG79FRHCGS",
+  "ResourceType": "AWS::IAM::Role",
+  "Timestamp": "2018-05-04T22:25:33.654Z",
+  "ResourceStatus": "CREATE_COMPLETE"
+}
+#+end_example
+
+** Manually copy PhysicalResourceIds into filter.yml
+
+#+BEGIN_SRC sh
+  cat filter.yaml
+#+END_SRC
+
+#+RESULTS:
+: - include: aws-autoscaling-launch-configurations:LaunchConfigurationName ~= DemoApp-DemoAppLaunchConfig-GC4WRNFG83E7
+: - include: aws-dynamodb-tables:TableName ~= demo-app-table
+: - include: aws-iam-instance-profiles:InstanceProfileName ~= DemoApp-DemoAppInstanceProfile-VFOQ0KDXSZTV
+: - include: aws-iam-roles:RoleName ~= DemoApp-DemoAppRole-DTKG79FRHCGS
+: - include: "*:Tags[].Key == Migrate"
+
+* Transcribe
+
+#+BEGIN_SRC sh
+  fugue-transcriber --profile $profile  --region $infraRegion \
+  --filter-file filter.yaml DemoApp.lw > transcriber_out.txt
+
+  tail -n 5 transcriber_out.txt
+#+END_SRC
+
+#+RESULTS:
+: Generating Ludwig...
+: ------------------------------------------------------------
+: Ludwig written to file: DemoApp.lw
+: ------------------------------------------------------------
+: Transcriber complete.
+
+Does it compile?
+
+#+BEGIN_SRC sh
+  lwc DemoApp.lw
+#+END_SRC
+
+#+RESULTS:
+
+* Manually edit transcribed Ludwig
+
+- [X] Remove the four external EC2 instances attached to the ELB (Bug [[https://luminal.atlassian.net/browse/FUGUE-6999][FUGUE-6999]]).
+
+Run =lwc= to ensure the composition compiles.
+
+#+BEGIN_SRC sh
+  lwc DemoApp.lw
+#+END_SRC
+
+#+RESULTS:
+
+* Import
+
+#+BEGIN_SRC sh
+  fugue run DemoApp.lw -a DemoApp --import
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+[ fugue run ] Running /Users/chrisc/Luminal/cffun/DemoApp.lw
+
+Run Details:
+    Account: default
+    Alias: DemoApp
+
+Compiling Ludwig file /Users/chrisc/Luminal/cffun/DemoApp.lw
+[ OK ] Successfully compiled. No errors.
+
+Uploading compiled Ludwig composition to S3...
+[ OK ] Successfully uploaded.
+
+Requesting the Conductor to create and run process based on composition ...
+[ DONE ] Process created and running.
+
+
+State    Updated    Created    Account              FID                                   Alias    Flags      Last Message  Next Command
+-------  ---------  ---------  -------------------  ------------------------------------  -------  -------  --------------  --------------
+Running  7:01pm     7:01pm     fugue-1525472515134  906743c9-0398-4837-833c-a750e0780aaa  DemoApp  -e                       run
+
+[ HELP ] Run the "fugue status" command to view details and status for all Fugue processes.
+#+end_example
+
+*DO NOT* proceed until the process status is =SUCCESS=.
+
+It is very important not to delete the CF stack until Fugue has successfully imported the
+infrastructure. Otherwise, you may end up in a situation where the CF stack is deleted and Fugue was not able
+to import the resources, in which case nothing would be managing the resources.
+
+#+BEGIN_SRC sh
+  fugue status
+#+END_SRC
+
+#+RESULTS:
+:
+: Fugue Status Report for chrisc/683892460708 - Fri May 4 2018 7:02pm
+:
+: State    Updated    Created    Account    FID/Alias    Flags    Last Message
+: -------  ---------  ---------  ---------  -----------  -------  --------------
+: Running  7:01pm     7:01pm     fugue      DemoApp      -e       SUCCEEDED
+:
+
+* Delete the CloudFormation Stack
+
+** Add DeletionPolicy attribute "retain" to CF template
+
+Add a =DeletionPolicy= to every resource in the CloudFormation JSON file. Creates a new file called
+=DemoAppRetain.json=.
+
+#+BEGIN_SRC sh
+  cat DemoApp.json | jq '.Resources[].DeletionPolicy = "Retain"' > DemoAppRetain.json
+#+END_SRC
+
+#+RESULTS:
+
+** Update CF stack with DeletionPolicy attribute "retain"
+
+#+BEGIN_SRC sh
+  aws --profile $profile --region $infraRegion cloudformation update-stack \
+    --capabilities CAPABILITY_IAM \
+    --template-body file://DemoAppRetain.json \
+    --stack-name DemoApp
+#+END_SRC
+
+#+RESULTS:
+: {
+:     "StackId": "arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2"
+: }
+
+Ensure update is complete.
+
+#+BEGIN_SRC sh
+  aws --profile $profile --region $infraRegion cloudformation describe-stacks \
+  --stack-name DemoApp | jq '.Stacks[] | select(.StackName == "DemoApp") | .StackStatus'
+#+END_SRC
+
+#+RESULTS:
+: "UPDATE_COMPLETE"
+
+** Delete CF stack
+
+#+BEGIN_SRC sh
+  aws --profile $profile --region $infraRegion cloudformation delete-stack --stack-name DemoApp
+#+END_SRC
+
+#+RESULTS:
+
+* Inspect Fugue resources
+
+#+BEGIN_SRC sh
+  fugue status DemoApp
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+AccountId:   fugue-1525472515134
+FID:         906743c9-0398-4837-833c-a750e0780aaa
+LastMessage: SUCCESS
+Status:      SUCCEEDED
+Enforcement: ENABLED
+Lock Status: DISABLED
+
+Resources:
+  AutoScalingGroups:
+  - AutoScalingGroupName: DemoApp-DemoAppASG-VS375PPUYLDD
+    MinSize:              4
+    MaxSize:              4
+    AvailabilityZones:
+    - us-west-2a
+    - us-west-2b
+    LoadBalancerNames:
+    - DemoApp-DemoAppLoa-1EQF61B0ZL1K8
+    Instances:
+    - InstanceId:   i-0018aaba451c6cd45
+      HealthStatus: Healthy
+    - InstanceId:   i-05ab5828470fc5d44
+      HealthStatus: Healthy
+    - InstanceId:   i-0886ad6568cca5e0f
+      HealthStatus: Healthy
+    - InstanceId:   i-0dc11a008eae7d919
+      HealthStatus: Healthy
+    Tags:
+      Application:                                     Fugue Demo App
+      Fugue ID:                                        906743c9-0398-4837-833c-a750e0780aaa.701e3f33-1197-5646-ae27-3a212cbfca7b
+      Migrate:                                         'true'
+      Name:                                            demo-app-asg
+      aws:cloudformation:logical-id:                   DemoAppASG
+      aws:cloudformation:stack-id:                     arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2
+      aws:cloudformation:stack-name:                   DemoApp
+      fugue-transcriber:aws:cloudformation:logical-id: DemoAppASG
+      fugue-transcriber:aws:cloudformation:stack-id:   arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2
+      fugue-transcriber:aws:cloudformation:stack-name: DemoApp
+
+  DhcpOptions:
+  - DomainName:    us-west-2.compute.internal
+    Region:        us-west-2
+    DhcpOptionsId: dopt-7eafff07
+    Tags:
+      Fugue ID:                                        906743c9-0398-4837-833c-a750e0780aaa.af9fae3c-a793-5621-a352-6a4bc1e8bb0b
+      Migrate:                                         'true'
+      Name:                                            demo-app-network
+      aws:cloudformation:logical-id:                   DemoAppDHCPOptions
+      aws:cloudformation:stack-id:                     arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2
+      aws:cloudformation:stack-name:                   DemoApp
+      fugue-transcriber:aws:cloudformation:logical-id: DemoAppDHCPOptions
+      fugue-transcriber:aws:cloudformation:stack-id:   arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2
+      fugue-transcriber:aws:cloudformation:stack-name: DemoApp
+  - DomainName:    us-west-2.compute.internal
+    Region:        us-west-2
+    DhcpOptionsId: dopt-1f580e66
+    Tags:
+      Fugue ID:                                        906743c9-0398-4837-833c-a750e0780aaa.27b22d32-d972-548c-9a53-0e188322a14e
+      Migrate:                                         'true'
+      Name:                                            demo-app-network
+      aws:cloudformation:logical-id:                   DemoAppDHCPOptions
+      aws:cloudformation:stack-id:                     arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/e0c17f80-4e39-11e8-b6af-503f20f2ade6
+      aws:cloudformation:stack-name:                   DemoApp
+      fugue-transcriber:aws:cloudformation:logical-id: DemoAppDHCPOptions
+      fugue-transcriber:aws:cloudformation:stack-id:   arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/e0c17f80-4e39-11e8-b6af-503f20f2ade6
+      fugue-transcriber:aws:cloudformation:stack-name: DemoApp
+
+  IamInstanceProfiles:
+  - ARN:                 arn:aws:iam::683892460708:instance-profile/DemoApp-DemoAppInstanceProfile-VFOQ0KDXSZTV
+    Region:              us-east-1
+    InstanceProfileName: DemoApp-DemoAppInstanceProfile-VFOQ0KDXSZTV
+    Roles:
+    - ARN:      arn:aws:iam::683892460708:role/DemoApp-DemoAppRole-DTKG79FRHCGS
+      RoleName: DemoApp-DemoAppRole-DTKG79FRHCGS
+
+  IamRoles:
+  - Role:
+      ARN:      arn:aws:iam::683892460708:role/DemoApp-DemoAppRole-DTKG79FRHCGS
+      RoleName: DemoApp-DemoAppRole-DTKG79FRHCGS
+    Region: us-east-1
+    Policies: []
+    ManagedPolicies:
+    - Arn:              arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+      AttachmentCount:  2
+      CreateDate:       1423248011
+      DefaultVersionId: v8
+      Description:      Provides full access to Amazon DynamoDB via the AWS Management
+        Console.
+      IsAttachable:     true
+      Path:             /
+      PolicyId:         ANPAINUGF2JSOSUY76KYA
+      PolicyName:       AmazonDynamoDBFullAccess
+      UpdateDate:       1517955466
+
+  InternetGateways:
+  - InternetGatewayId: igw-39740b5f
+    Region:            us-west-2
+    Attachments:
+    - State: available
+      VpcId: vpc-98133de1
+    Tags:
+      Fugue ID:                                        906743c9-0398-4837-833c-a750e0780aaa.f51d4b17-7dc0-545b-ad69-ec8e8123ec3e
+      Migrate:                                         'true'
+      Name:                                            demo-app-network-IGW
+      aws:cloudformation:logical-id:                   DemoAppIgw
+      aws:cloudformation:stack-id:                     arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2
+      aws:cloudformation:stack-name:                   DemoApp
+      fugue-transcriber:aws:cloudformation:logical-id: DemoAppIgw
+      fugue-transcriber:aws:cloudformation:stack-id:   arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2
+      fugue-transcriber:aws:cloudformation:stack-name: DemoApp
+      network:                                         public
+
+  LaunchConfigurations:
+  - LaunchConfigurationName:  DemoApp-DemoAppLaunchConfig-GC4WRNFG83E7
+    LaunchConfigurationARN:   arn:aws:autoscaling:us-west-2:683892460708:launchConfiguration:c99f9a42-1b10-4e82-bfc3-626771da5a22:launchConfigurationName/DemoApp-DemoAppLaunchConfig-GC4WRNFG83E7
+    Region:                   us-west-2
+    IamInstanceProfile:       DemoApp-DemoAppInstanceProfile-VFOQ0KDXSZTV
+    ImageId:                  ami-b7b366d7
+    InstanceType:             t2.micro
+    AssociatePublicIpAddress: true
+    EbsOptimized:             false
+    InstanceMonitoring:
+      Enabled: true
+    SecurityGroups:
+    - sg-fccdfb82
+
+  LoadBalancers:
+  - LoadBalancer:
+      LoadBalancerName: DemoApp-DemoAppLoa-1EQF61B0ZL1K8
+      DNSName:          DemoApp-DemoAppLoa-1EQF61B0ZL1K8-196277331.us-west-2.elb.amazonaws.com
+      VPCId:            vpc-98133de1
+      AvailabilityZones:
+      - us-west-2a
+      - us-west-2b
+      Scheme:           internet-facing
+      SourceSecurityGroup:
+        GroupName:  DemoApp-DemoAppWebSg-NXI4H0BYDHUJ
+        OwnerAlias: '683892460708'
+      Instances:
+      - InstanceId: i-0018aaba451c6cd45
+      - InstanceId: i-05ab5828470fc5d44
+      - InstanceId: i-0886ad6568cca5e0f
+      - InstanceId: i-0dc11a008eae7d919
+      Subnets:
+      - subnet-64b8311d
+      - subnet-967dd6dd
+      SecurityGroups:
+      - sg-a9cdfbd7
+      ListenerDescriptions:
+      - Listener:
+          InstancePort:     3000
+          InstanceProtocol: HTTP
+          LoadBalancerPort: 80
+          Protocol:         HTTP
+        PolicyNames: []
+      HealthCheck:
+        HealthyThreshold:   3
+        Interval:           15
+        Target:             TCP:3000
+        Timeout:            3
+        UnhealthyThreshold: 3
+    Region: us-west-2
+    Attributes:
+      AccessLog:
+        Enabled: false
+      ConnectionDraining:
+        Enabled: false
+        Timeout: 300
+      ConnectionSettings:
+        IdleTimeout: 60
+      CrossZoneLoadBalancing:
+        Enabled: false
+    Tags:
+      Application:                                     Fugue Demo App
+      Fugue ID:                                        906743c9-0398-4837-833c-a750e0780aaa.1e3a17fa-4801-5aa2-9133-a003758f96e4
+      Migrate:                                         'true'
+      Name:                                            demo-app-elb
+      fugue-transcriber:aws:cloudformation:logical-id: DemoAppLoadBalancer
+      fugue-transcriber:aws:cloudformation:stack-id:   arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2
+      fugue-transcriber:aws:cloudformation:stack-name: DemoApp
+
+  NetworkAcls:
+  - Associations:
+    - NetworkAclAssociationId: aclassoc-760adc05
+      NetworkAclId:            acl-e2ea599a
+      SubnetId:                subnet-64b8311d
+    - NetworkAclAssociationId: aclassoc-570bdd24
+      NetworkAclId:            acl-e2ea599a
+      SubnetId:                subnet-967dd6dd
+    Entries:
+    - CidrBlock:  0.0.0.0/0
+      Egress:     true
+      Protocol:   '-1'
+      RuleAction: allow
+      RuleNumber: 100
+    - CidrBlock:  0.0.0.0/0
+      Egress:     true
+      Protocol:   '-1'
+      RuleAction: deny
+      RuleNumber: 32767
+    - CidrBlock:  0.0.0.0/0
+      Egress:     false
+      Protocol:   '-1'
+      RuleAction: allow
+      RuleNumber: 100
+    - CidrBlock:  0.0.0.0/0
+      Egress:     false
+      Protocol:   '-1'
+      RuleAction: deny
+      RuleNumber: 32767
+    IsDefault:    false
+    NetworkAclId: acl-e2ea599a
+    Tags:
+      Fugue ID:                                        906743c9-0398-4837-833c-a750e0780aaa.901bb01b-f29e-5741-a172-a091095f5715
+      Migrate:                                         'true'
+      Name:                                            demo-app-network-ACL
+      aws:cloudformation:logical-id:                   DemoAppNetworkAcl
+      aws:cloudformation:stack-id:                     arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2
+      aws:cloudformation:stack-name:                   DemoApp
+      fugue-transcriber:aws:cloudformation:logical-id: DemoAppNetworkAcl
+      fugue-transcriber:aws:cloudformation:stack-id:   arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2
+      fugue-transcriber:aws:cloudformation:stack-name: DemoApp
+      network:                                         public
+    VpcId:        vpc-98133de1
+    region:       us-west-2
+  - Associations: []
+    Entries:
+    - CidrBlock:  0.0.0.0/0
+      Egress:     true
+      Protocol:   '-1'
+      RuleAction: allow
+      RuleNumber: 100
+    - CidrBlock:  0.0.0.0/0
+      Egress:     true
+      Protocol:   '-1'
+      RuleAction: deny
+      RuleNumber: 32767
+    - CidrBlock:  0.0.0.0/0
+      Egress:     false
+      Protocol:   '-1'
+      RuleAction: allow
+      RuleNumber: 100
+    - CidrBlock:  0.0.0.0/0
+      Egress:     false
+      Protocol:   '-1'
+      RuleAction: deny
+      RuleNumber: 32767
+    IsDefault:    false
+    NetworkAclId: acl-6a5cea12
+    Tags:
+      Fugue ID:                                        906743c9-0398-4837-833c-a750e0780aaa.21161aaf-3160-5830-8536-64074b76d3f1
+      Migrate:                                         'true'
+      Name:                                            demo-app-network-ACL
+      aws:cloudformation:logical-id:                   DemoAppNetworkAcl
+      aws:cloudformation:stack-id:                     arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/e0c17f80-4e39-11e8-b6af-503f20f2ade6
+      aws:cloudformation:stack-name:                   DemoApp
+      fugue-transcriber:aws:cloudformation:logical-id: DemoAppNetworkAcl
+      fugue-transcriber:aws:cloudformation:stack-id:   arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/e0c17f80-4e39-11e8-b6af-503f20f2ade6
+      fugue-transcriber:aws:cloudformation:stack-name: DemoApp
+      network:                                         public
+    VpcId:        vpc-16032f6f
+    region:       us-west-2
+
+  RouteTables:
+  - Associations: []
+    PropagatingVgws: []
+    RouteTableId: rtb-26f7df5e
+    Routes:
+    - DestinationCidrBlock: 10.0.0.0/16
+      GatewayId:            local
+      Origin:               CreateRouteTable
+      State:                active
+    Tags:
+      Fugue ID:                                        906743c9-0398-4837-833c-a750e0780aaa.d1e7116c-345d-5b8c-a0e7-408e2d168a10
+      Migrate:                                         'true'
+      Name:                                            demo-app-network-LOCAL-RT
+      aws:cloudformation:logical-id:                   DemoAppLocalRT
+      aws:cloudformation:stack-id:                     arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2
+      aws:cloudformation:stack-name:                   DemoApp
+      fugue-transcriber:aws:cloudformation:logical-id: DemoAppLocalRT
+      fugue-transcriber:aws:cloudformation:stack-id:   arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2
+      fugue-transcriber:aws:cloudformation:stack-name: DemoApp
+      network:                                         public
+    VpcId:        vpc-98133de1
+    region:       us-west-2
+  - Associations:
+    - Main:                    false
+      RouteTableAssociationId: rtbassoc-ba7b32c0
+      RouteTableId:            rtb-53f2da2b
+      SubnetId:                subnet-64b8311d
+    - Main:                    false
+      RouteTableAssociationId: rtbassoc-e078319a
+      RouteTableId:            rtb-53f2da2b
+      SubnetId:                subnet-967dd6dd
+    PropagatingVgws: []
+    RouteTableId: rtb-53f2da2b
+    Routes:
+    - DestinationCidrBlock: 10.0.0.0/16
+      GatewayId:            local
+      Origin:               CreateRouteTable
+      State:                active
+    - DestinationCidrBlock: 0.0.0.0/0
+      GatewayId:            igw-39740b5f
+      Origin:               CreateRoute
+      State:                active
+    Tags:
+      Fugue ID:                                        906743c9-0398-4837-833c-a750e0780aaa.c55acb5a-c8de-57af-9d12-e57e72ef5d25
+      Migrate:                                         'true'
+      Name:                                            demo-app-network-PUBLIC-RT
+      aws:cloudformation:logical-id:                   DemoAppPublicRT
+      aws:cloudformation:stack-id:                     arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2
+      aws:cloudformation:stack-name:                   DemoApp
+      fugue-transcriber:aws:cloudformation:logical-id: DemoAppPublicRT
+      fugue-transcriber:aws:cloudformation:stack-id:   arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2
+      fugue-transcriber:aws:cloudformation:stack-name: DemoApp
+      network:                                         public
+    VpcId:        vpc-98133de1
+    region:       us-west-2
+
+  SecurityGroups:
+  - Description: Allow http traffic from the ELB SG
+    GroupId:     sg-fccdfb82
+    GroupName:   DemoApp-DemoAppElbSg-T0BAH1VFLFB7
+    IpPermissions:
+    - FromPort:   3000
+      IpProtocol: tcp
+      IpRanges: []
+      Ipv6Ranges: []
+      PrefixListIds: []
+      ToPort:     3000
+      UserIdGroupPairs:
+      - GroupId: sg-a9cdfbd7
+        UserId:  '683892460708'
+    IpPermissionsEgress:
+    - IpProtocol: '-1'
+      IpRanges:
+      - CidrIp: 0.0.0.0/0
+      Ipv6Ranges: []
+      PrefixListIds: []
+      UserIdGroupPairs: []
+    OwnerId:     '683892460708'
+    Tags:
+      Application:                                     Fugue Demo App
+      Fugue ID:                                        906743c9-0398-4837-833c-a750e0780aaa.ff76131d-fe8b-56b1-bbb6-daf2f094c10e
+      Migrate:                                         'true'
+      Name:                                            demo-app-web-sg
+      aws:cloudformation:logical-id:                   DemoAppElbSg
+      aws:cloudformation:stack-id:                     arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2
+      aws:cloudformation:stack-name:                   DemoApp
+      fugue-transcriber:aws:cloudformation:logical-id: DemoAppElbSg
+      fugue-transcriber:aws:cloudformation:stack-id:   arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2
+      fugue-transcriber:aws:cloudformation:stack-name: DemoApp
+    VpcId:       vpc-98133de1
+    region:      us-west-2
+  - Description: Allow http/s traffic from the Internet
+    GroupId:     sg-a9cdfbd7
+    GroupName:   DemoApp-DemoAppWebSg-NXI4H0BYDHUJ
+    IpPermissions:
+    - FromPort:   80
+      IpProtocol: tcp
+      IpRanges:
+      - CidrIp: 0.0.0.0/0
+      Ipv6Ranges: []
+      PrefixListIds: []
+      ToPort:     80
+      UserIdGroupPairs: []
+    - FromPort:   443
+      IpProtocol: tcp
+      IpRanges:
+      - CidrIp: 0.0.0.0/0
+      Ipv6Ranges: []
+      PrefixListIds: []
+      ToPort:     443
+      UserIdGroupPairs: []
+    IpPermissionsEgress:
+    - IpProtocol: '-1'
+      IpRanges:
+      - CidrIp: 0.0.0.0/0
+      Ipv6Ranges: []
+      PrefixListIds: []
+      UserIdGroupPairs: []
+    OwnerId:     '683892460708'
+    Tags:
+      Application:                                     Fugue Demo App
+      Fugue ID:                                        906743c9-0398-4837-833c-a750e0780aaa.5071913d-b757-5e43-938e-1602ecd5678e
+      Migrate:                                         'true'
+      Name:                                            demo-app-elb-sg
+      aws:cloudformation:logical-id:                   DemoAppWebSg
+      aws:cloudformation:stack-id:                     arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2
+      aws:cloudformation:stack-name:                   DemoApp
+      fugue-transcriber:aws:cloudformation:logical-id: DemoAppWebSg
+      fugue-transcriber:aws:cloudformation:stack-id:   arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2
+      fugue-transcriber:aws:cloudformation:stack-name: DemoApp
+    VpcId:       vpc-98133de1
+    region:      us-west-2
+
+  Subnets:
+  - networkAclAssociation:
+      NetworkAclAssociationId: aclassoc-760adc05
+      NetworkAclId:            acl-e2ea599a
+      SubnetId:                subnet-64b8311d
+    region: us-west-2
+    subnet:
+      AssignIpv6AddressOnCreation: false
+      AvailabilityZone:            us-west-2b
+      AvailableIpAddressCount:     248
+      CidrBlock:                   10.0.2.0/24
+      DefaultForAz:                false
+      Ipv6CidrBlockAssociationSet: []
+      MapPublicIpOnLaunch:         false
+      State:                       available
+      SubnetId:                    subnet-64b8311d
+      Tags:
+      - Key:   Fugue ID
+        Value: 906743c9-0398-4837-833c-a750e0780aaa.cf780090-e615-58be-9f71-23ce0e846063
+      - Key:   aws:cloudformation:logical-id
+        Value: DemoAppSubnetB
+      - Key:   fugue-transcriber:aws:cloudformation:stack-id
+        Value: arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2
+      - Key:   aws:cloudformation:stack-name
+        Value: DemoApp
+      - Key:   fugue-transcriber:aws:cloudformation:stack-name
+        Value: DemoApp
+      - Key:   Migrate
+        Value: 'true'
+      - Key:   Name
+        Value: demo-app-network-PUBLIC-SN-B
+      - Key:   aws:cloudformation:stack-id
+        Value: arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2
+      - Key:   fugue-transcriber:aws:cloudformation:logical-id
+        Value: DemoAppSubnetB
+      - Key:   network
+        Value: public
+      VpcId:                       vpc-98133de1
+  - networkAclAssociation:
+      NetworkAclAssociationId: aclassoc-570bdd24
+      NetworkAclId:            acl-e2ea599a
+      SubnetId:                subnet-967dd6dd
+    region: us-west-2
+    subnet:
+      AssignIpv6AddressOnCreation: false
+      AvailabilityZone:            us-west-2a
+      AvailableIpAddressCount:     248
+      CidrBlock:                   10.0.1.0/24
+      DefaultForAz:                false
+      Ipv6CidrBlockAssociationSet: []
+      MapPublicIpOnLaunch:         false
+      State:                       available
+      SubnetId:                    subnet-967dd6dd
+      Tags:
+      - Key:   Fugue ID
+        Value: 906743c9-0398-4837-833c-a750e0780aaa.a389c138-019a-5c3c-96d4-091721641b73
+      - Key:   aws:cloudformation:logical-id
+        Value: DemoAppSubnetA
+      - Key:   fugue-transcriber:aws:cloudformation:stack-id
+        Value: arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2
+      - Key:   network
+        Value: public
+      - Key:   fugue-transcriber:aws:cloudformation:logical-id
+        Value: DemoAppSubnetA
+      - Key:   Name
+        Value: demo-app-network-PUBLIC-SN-A
+      - Key:   Migrate
+        Value: 'true'
+      - Key:   aws:cloudformation:stack-id
+        Value: arn:aws:cloudformation:us-west-2:683892460708:stack/DemoApp/02739170-4fea-11e8-93d8-50a68a2012f2
+      - Key:   aws:cloudformation:stack-name
+        Value: DemoApp
+      - Key:   fugue-transcriber:aws:cloudformation:stack-name
+        Value: DemoApp
+      VpcId:                       vpc-98133de1
+
+  Tables:
+  - TableName:   demo-app-table
+    Region:      us-west-2
+    TableStatus: ACTIVE
+    ProvisionedThroughput:
+      ReadCapacityUnits:  10
+      WriteCapacityUnits: 10
+
+  VPCs:
+  - VpcId:     vpc-98133de1
+    Region:    us-west-2
+    CidrBlock: 10.0.0.0/16
+  - VpcId:     vpc-16032f6f
+    Region:    us-west-2
+    CidrBlock: 10.0.0.0/16
+
+#+end_example
