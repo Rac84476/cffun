@@ -1,8 +1,4 @@
-## Instructions
-
-### Create CloudFormation Stack
-
-Creates AWS infra. The infra runs the Fugue Demo App.
+## Create CloudFormation Stack
 
 ```
 aws --region us-west-2 cloudformation create-stack \
@@ -11,7 +7,58 @@ aws --region us-west-2 cloudformation create-stack \
   --stack-name DemoApp
 ```
 
-### Add DeletionPolicy
+Verify the app works by isiting URL:
+
+```
+aws --region us-west-2 elb describe-load-balancers | jq -r '.LoadBalancerDescriptions[]
+    | select(.LoadBalancerName | startswith("DemoApp")) | .DNSName'
+```
+
+## Copy Resource IDs into Transcriber filter file
+
+```
+aws --region us-west-2 cloudformation describe-stack-resources --stack-name DemoApp |
+  jq -r '.StackResources[] |
+  select(.ResourceType == "AWS::AutoScaling::LaunchConfiguration"
+  or .ResourceType == "AWS::IAM::InstanceProfile"
+  or .ResourceType == "AWS::IAM::Role")'
+```
+
+## Transcribe
+
+```
+fugue-transcriber --region us-west-2 --filter-file filter.yaml DemoApp.lw
+```
+
+## Manually edit transcribed Ludwig
+
+- Remove the four external EC2 instances attached to the ELB ([FUGUE-6999][0]).
+- Ensure `DemoApp.lw` compiles.
+     ```
+     lwc DemoApp.lw
+     ```
+
+## Import
+
+Import the resources that we transcribed into Ludwig.
+
+```
+fugue run DemoApp.lw -a DemoApp --import
+```
+
+*DO NOT* proceed until the process status is `SUCCESS`.
+
+It is very important not to delete the CF stack until Fugue has successfully imported the
+infrastructure. Otherwise, you may end up in a situation where the CF stack is deleted and Fugue was not able
+to import the resources, in which case nothing would be managing the resources.
+
+```
+fugue status
+```
+
+## Delete the CloudFormation Stack
+
+### Add DeletionPolicy attribute "retain" to CF template
 
 Add a `DeletionPolicy` to every resource in the CloudFormation JSON file. Creates a new file called
 `DemoAppRetain.json`.
@@ -20,7 +67,7 @@ Add a `DeletionPolicy` to every resource in the CloudFormation JSON file. Create
 cat DemoApp.json | jq '.Resources[].DeletionPolicy = "Retain"' > DemoAppRetain.json
 ```
 
-### Update Stack with DeletionPolicy Attribute Retain
+## Update CF stack with DeletionPolicy attribute "retain"
 
 ```
 aws --region us-west-2 cloudformation update-stack \
@@ -29,42 +76,28 @@ aws --region us-west-2 cloudformation update-stack \
   --stack-name DemoApp
 ```
 
-### Copy IDs into Transcriber filter file
-
-Some resources, which cannot be identified with a tag, need to be specifically included in a Transcriber
-filter file. In this example, we need to explicitly spcefify:
-
-- Launch Configuration Name
-- DynamoDB Table Name
-- Instance Profile Name
-- Role Name
-
-To get the instance profile name:
-```
-ips=$(aws iam list-instance-profiles)
-echo $ips | jq -r '.InstanceProfiles[] | select(.InstanceProfileName | startswith("DemoApp")).InstanceProfileName'
-```
-
-### Transcribe
-
-Transcribe the AWS infra that was created by the `DemoAppRetain.json` CloudFormation stack.
+Ensure update is complete. The following should return "UPDATE_COMPLETE".
 
 ```
-fugue-transcriber --region us-west-2 --filter-file filter.yaml DemoApp.lw
+aws --region us-west-2 cloudformation describe-stacks \
+  --stack-name DemoApp | jq '.Stacks[] | select(.StackName == "DemoApp") | .StackStatus'
 ```
 
-### Import
-
-Import the resources that we transcribed into Ludwig.
-
-```
-fugue run DemoApp.lw -a DemoApp --import
-```
-
-### Delete CloudFormation Stack
+### Delete the CF stack
 
 ```
 aws --region us-west-2 cloudformation delete-stack --stack-name DemoApp
+```
+
+Look in the AWS console to confirm that the stack is deleted.
+
+## Verify DemoApp still works
+
+Visit URL:
+
+```
+aws --region us-west-2 elb describe-load-balancers | jq -r '.LoadBalancerDescriptions[]
+    | select(.LoadBalancerName | startswith("DemoApp")) | .DNSName'
 ```
 
 ## Notes
@@ -90,12 +123,5 @@ $ aws --region us-west-2 cloudformation describe-stack-resources \
   --stack-name DemoApp | jq -r .StackResources[]
 ```
 
-## Get Stack Resources Without Tags
-```
-$ aws --region us-west-2 cloudformation describe-stack-resources --stack-name DemoApp |
-  jq -r '.StackResources[] |
-  select(.ResourceType == "AWS::AutoScaling::LaunchConfiguration"
-  or .ResourceType == "AWS::DynamoDB::Table"
-  or .ResourceType == "AWS::IAM::InstanceProfile"
-  or .ResourceType == "AWS::IAM::Role")'
-```
+
+[0]: https://luminal.atlassian.net/browse/FUGUE-6999
