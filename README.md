@@ -67,7 +67,7 @@ Add a `DeletionPolicy` to every resource in the CloudFormation JSON file. Create
 cat DemoApp.json | jq '.Resources[].DeletionPolicy = "Retain"' > DemoAppRetain.json
 ```
 
-## Update CF stack with DeletionPolicy attribute "retain"
+### Update CF stack with DeletionPolicy attribute "retain"
 
 ```
 aws --region us-west-2 cloudformation update-stack \
